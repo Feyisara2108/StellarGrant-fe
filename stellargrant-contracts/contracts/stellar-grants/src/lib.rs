@@ -153,7 +153,8 @@ impl StellarGrantsContract {
             return Err(ContractError::InvalidInput);
         }
 
-        Storage::get_milestone(&env, grant_id, milestone_idx).ok_or(ContractError::MilestoneNotFound)
+        Storage::get_milestone(&env, grant_id, milestone_idx)
+            .ok_or(ContractError::MilestoneNotFound)
     }
 }
 
