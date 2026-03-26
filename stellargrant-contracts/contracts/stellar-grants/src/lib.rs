@@ -314,7 +314,7 @@ impl StellarGrantsContract {
 
         let reputation = Storage::get_reviewer_reputation(&env, reviewer.clone());
         milestone.votes.set(reviewer.clone(), approve);
-        
+
         if approve {
             milestone.approvals += reputation;
         } else {

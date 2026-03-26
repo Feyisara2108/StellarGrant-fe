@@ -1255,7 +1255,13 @@ mod tests {
         reviewers.push_back(high_rep_reviewer.clone());
         reviewers.push_back(low_rep_reviewer.clone());
         create_grant(&env, &contract_id, grant_id, owner, token, reviewers);
-        create_milestone(&env, &contract_id, grant_id, milestone_idx, MilestoneState::Submitted);
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
         // Give high_rep_reviewer a reputation of 3, low_rep_reviewer a reputation of 1
         env.as_contract(&contract_id, || {
@@ -1264,17 +1270,20 @@ mod tests {
         });
 
         env.mock_all_auths();
-        
+
         // Total weight = 3 + 1 = 4. Quorum margin = (4 / 2) + 1 = 3.
         // high_rep_reviewer's vote (3 weight) should pass it alone.
         let result = client.milestone_vote(&grant_id, &milestone_idx, &high_rep_reviewer, &true);
-        assert_eq!(result, true); 
+        assert_eq!(result, true);
 
         env.as_contract(&contract_id, || {
             let updated_milestone = Storage::get_milestone(&env, grant_id, milestone_idx).unwrap();
             assert_eq!(updated_milestone.state, MilestoneState::Approved);
             // After consensus, high_rep_reviewer should have 4 (3 + 1)
-            assert_eq!(Storage::get_reviewer_reputation(&env, high_rep_reviewer.clone()), 4);
+            assert_eq!(
+                Storage::get_reviewer_reputation(&env, high_rep_reviewer.clone()),
+                4
+            );
         });
     }
 
@@ -1293,7 +1302,13 @@ mod tests {
         reviewers.push_back(reviewer1.clone());
         reviewers.push_back(reviewer2.clone());
         create_grant(&env, &contract_id, grant_id, owner, token, reviewers);
-        create_milestone(&env, &contract_id, grant_id, milestone_idx, MilestoneState::Submitted);
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
         env.mock_all_auths();
 
@@ -1328,7 +1343,13 @@ mod tests {
         reviewers.push_back(high_rep_reviewer.clone());
         reviewers.push_back(low_rep_reviewer.clone());
         create_grant(&env, &contract_id, grant_id, owner, token, reviewers);
-        create_milestone(&env, &contract_id, grant_id, milestone_idx, MilestoneState::Submitted);
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
         // Give high_rep_reviewer a reputation of 3, low_rep_reviewer a reputation of 1
         env.as_contract(&contract_id, || {
@@ -1337,17 +1358,20 @@ mod tests {
         });
 
         env.mock_all_auths();
-        
+
         // Total weight = 3 + 1 = 4. Quorum margin = (4 / 2) + 1 = 3.
         // low_rep_reviewer's vote (1 weight) should not reach quorum alone.
         let result = client.milestone_vote(&grant_id, &milestone_idx, &low_rep_reviewer, &true);
-        assert_eq!(result, false); 
+        assert_eq!(result, false);
 
         env.as_contract(&contract_id, || {
             let updated_milestone = Storage::get_milestone(&env, grant_id, milestone_idx).unwrap();
             assert_eq!(updated_milestone.state, MilestoneState::Submitted);
             // No increment yet since consensus was not reached
-            assert_eq!(Storage::get_reviewer_reputation(&env, low_rep_reviewer.clone()), 1);
+            assert_eq!(
+                Storage::get_reviewer_reputation(&env, low_rep_reviewer.clone()),
+                1
+            );
         });
     }
 
@@ -1366,7 +1390,13 @@ mod tests {
         reviewers.push_back(reviewer_harmonious.clone());
         reviewers.push_back(reviewer_dissenting.clone());
         create_grant(&env, &contract_id, grant_id, owner, token, reviewers);
-        create_milestone(&env, &contract_id, grant_id, milestone_idx, MilestoneState::Submitted);
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
         // Give reviewer_harmonious reputation 2, reviewer_dissenting reputation 1
         env.as_contract(&contract_id, || {
@@ -1375,17 +1405,23 @@ mod tests {
         });
 
         env.mock_all_auths();
-        
+
         // Total weight = 3. Quorum = 2.
         // Dissenting votes false first.
         client.milestone_vote(&grant_id, &milestone_idx, &reviewer_dissenting, &false);
         // Harmonious votes true, reaching quorum 2.
         let result = client.milestone_vote(&grant_id, &milestone_idx, &reviewer_harmonious, &true);
-        assert_eq!(result, true); 
+        assert_eq!(result, true);
 
         env.as_contract(&contract_id, || {
-            assert_eq!(Storage::get_reviewer_reputation(&env, reviewer_harmonious.clone()), 3); // 2 -> 3
-            assert_eq!(Storage::get_reviewer_reputation(&env, reviewer_dissenting.clone()), 1); // Stayed 1
+            assert_eq!(
+                Storage::get_reviewer_reputation(&env, reviewer_harmonious.clone()),
+                3
+            ); // 2 -> 3
+            assert_eq!(
+                Storage::get_reviewer_reputation(&env, reviewer_dissenting.clone()),
+                1
+            ); // Stayed 1
         });
     }
 }
