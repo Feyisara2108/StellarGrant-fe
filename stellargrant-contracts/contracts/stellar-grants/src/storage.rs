@@ -16,6 +16,7 @@ pub enum DataKey {
     /// Identity oracle contract address for KYC verification
     IdentityOracle,
     ReviewerReputation(soroban_sdk::Address),
+    GlobalAdmin,
 }
 
 pub struct Storage;
@@ -54,6 +55,14 @@ impl Storage {
 
     pub fn get_identity_oracle(env: &Env) -> Option<soroban_sdk::Address> {
         env.storage().persistent().get(&DataKey::IdentityOracle)
+    }
+
+    pub fn get_global_admin(env: &Env) -> Option<soroban_sdk::Address> {
+        env.storage().persistent().get(&DataKey::GlobalAdmin)
+    }
+
+    pub fn set_global_admin(env: &Env, admin: &soroban_sdk::Address) {
+        env.storage().persistent().set(&DataKey::GlobalAdmin, admin);
     }
 
     pub fn get_grant(env: &Env, grant_id: u64) -> Option<Grant> {

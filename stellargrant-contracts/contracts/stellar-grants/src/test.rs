@@ -364,6 +364,160 @@ mod tests {
     }
 
     #[test]
+    fn test_cancel_grant_by_global_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, admin, contract_id) = setup_test(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_id = token_contract.address();
+        let token_admin = token::StellarAssetClient::new(&env, &token_id);
+
+        let owner = Address::generate(&env);
+        let global_admin = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let grant_id = 11u64;
+
+        client.set_global_admin(&global_admin, &global_admin);
+
+        token_admin.mint(&contract_id, &500);
+
+        let mut funders = Vec::new(&env);
+        funders.push_back(GrantFund {
+            funder: funder.clone(),
+            amount: 500,
+        });
+
+        env.as_contract(&contract_id, || {
+            let grant = Grant {
+                id: grant_id,
+                title: String::from_str(&env, "Admin Cancel"),
+                description: String::from_str(&env, "Desc"),
+                milestone_amount: 500,
+                owner,
+                token: token_id.clone(),
+                status: GrantStatus::Active,
+                total_amount: 500,
+                reviewers: Vec::new(&env),
+                total_milestones: 1,
+                milestones_paid_out: 0,
+                escrow_balance: 500,
+                funders,
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+            };
+            Storage::set_grant(&env, grant_id, &grant);
+        });
+
+        let reason = String::from_str(&env, "Malicious behavior detected");
+        client.cancel_grant(&grant_id, &global_admin, &reason);
+
+        let token_client = token::Client::new(&env, &token_id);
+        assert_eq!(token_client.balance(&funder), 500);
+    }
+
+    #[test]
+    fn test_cancel_grant_zero_escrow_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, _, contract_id) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let grant_id = 12u64;
+
+        env.as_contract(&contract_id, || {
+            let grant = Grant {
+                id: grant_id,
+                title: String::from_str(&env, "No funds"),
+                description: String::from_str(&env, "Desc"),
+                milestone_amount: 500,
+                owner: owner.clone(),
+                token,
+                status: GrantStatus::Active,
+                total_amount: 1000,
+                reviewers: Vec::new(&env),
+                total_milestones: 2,
+                milestones_paid_out: 0,
+                escrow_balance: 0,
+                funders: Vec::new(&env),
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+            };
+            Storage::set_grant(&env, grant_id, &grant);
+        });
+
+        client.cancel_grant(&grant_id, &owner, &String::from_str(&env, "No traction"));
+
+        env.as_contract(&contract_id, || {
+            let updated = Storage::get_grant(&env, grant_id).unwrap();
+            assert_eq!(updated.status, GrantStatus::Cancelled);
+            assert_eq!(updated.escrow_balance, 0);
+        });
+    }
+
+    #[test]
+    fn test_cancel_grant_refund_handles_rounding_dust() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, admin, contract_id) = setup_test(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_id = token_contract.address();
+        let token_admin = token::StellarAssetClient::new(&env, &token_id);
+
+        let owner = Address::generate(&env);
+        let f1 = Address::generate(&env);
+        let f2 = Address::generate(&env);
+        let f3 = Address::generate(&env);
+        let grant_id = 13u64;
+
+        token_admin.mint(&contract_id, &100);
+
+        let mut funders = Vec::new(&env);
+        funders.push_back(GrantFund {
+            funder: f1.clone(),
+            amount: 1,
+        });
+        funders.push_back(GrantFund {
+            funder: f2.clone(),
+            amount: 1,
+        });
+        funders.push_back(GrantFund {
+            funder: f3.clone(),
+            amount: 1,
+        });
+
+        env.as_contract(&contract_id, || {
+            let grant = Grant {
+                id: grant_id,
+                title: String::from_str(&env, "Dust"),
+                description: String::from_str(&env, "Desc"),
+                milestone_amount: 50,
+                owner: owner.clone(),
+                token: token_id.clone(),
+                status: GrantStatus::Active,
+                total_amount: 150,
+                reviewers: Vec::new(&env),
+                total_milestones: 3,
+                milestones_paid_out: 0,
+                escrow_balance: 100,
+                funders,
+                reason: None,
+                timestamp: env.ledger().timestamp(),
+            };
+            Storage::set_grant(&env, grant_id, &grant);
+        });
+
+        client.cancel_grant(&grant_id, &owner, &String::from_str(&env, "Cancelled"));
+
+        let token_client = token::Client::new(&env, &token_id);
+        assert_eq!(token_client.balance(&f1), 33);
+        assert_eq!(token_client.balance(&f2), 33);
+        assert_eq!(token_client.balance(&f3), 34);
+    }
+
+    #[test]
     fn test_grant_complete_success_with_refunds() {
         let env = Env::default();
         env.mock_all_auths();
