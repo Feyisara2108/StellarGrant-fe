@@ -170,6 +170,7 @@ impl StellarGrantsContract {
         };
 
         Storage::set_grant(&env, grant_id, &grant);
+        Storage::set_grant_min_reputation(&env, grant_id, 0);
         Storage::set_escrow_state(
             &env,
             grant_id,
@@ -184,6 +185,34 @@ impl StellarGrantsContract {
 
         Events::emit_grant_created(&env, grant_id, owner, title, total_amount);
 
+        Ok(grant_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn grant_create_with_rep_req(
+        env: Env,
+        owner: Address,
+        title: String,
+        description: String,
+        token: Address,
+        total_amount: i128,
+        milestone_amount: i128,
+        num_milestones: u32,
+        reviewers: soroban_sdk::Vec<Address>,
+        min_reputation_score: u64,
+    ) -> Result<u64, ContractError> {
+        let grant_id = Self::grant_create(
+            env.clone(),
+            owner,
+            title,
+            description,
+            token,
+            total_amount,
+            milestone_amount,
+            num_milestones,
+            reviewers,
+        )?;
+        Storage::set_grant_min_reputation(&env, grant_id, min_reputation_score);
         Ok(grant_id)
     }
 
@@ -278,6 +307,7 @@ impl StellarGrantsContract {
             skills,
             github_url,
             registration_timestamp: env.ledger().timestamp(),
+            reputation_score: 0,
             grants_count: 0,
             total_earned: 0,
         };
@@ -587,6 +617,26 @@ impl StellarGrantsContract {
         grant.timestamp = env.ledger().timestamp();
         Storage::set_grant(env, grant_id, &grant);
 
+        if total_paid > 0 {
+            if let Some(mut profile) = Storage::get_contributor(env, grant.owner.clone()) {
+                profile.total_earned = profile
+                    .total_earned
+                    .checked_add(total_paid)
+                    .ok_or(ContractError::InvalidInput)?;
+                profile.reputation_score = profile
+                    .reputation_score
+                    .checked_add(grant.total_milestones as u64)
+                    .ok_or(ContractError::InvalidInput)?;
+                Storage::set_contributor(env, grant.owner.clone(), &profile);
+                Events::emit_reputation_increased(
+                    env,
+                    grant.owner.clone(),
+                    profile.reputation_score,
+                    profile.total_earned,
+                );
+            }
+        }
+
         let mut escrow_state = Storage::get_escrow_state(env, grant_id);
         escrow_state.lifecycle = EscrowLifecycleState::Released;
         escrow_state.quorum_ready = true;
@@ -845,6 +895,8 @@ impl StellarGrantsContract {
             return Err(ContractError::Unauthorized);
         }
 
+        ensure_min_reputation_for_grant(&env, grant_id, recipient.clone())?;
+
         apply_milestone_submission(
             &env,
             grant_id,
@@ -886,6 +938,8 @@ impl StellarGrantsContract {
         if grant.owner != recipient {
             return Err(ContractError::Unauthorized);
         }
+
+        ensure_min_reputation_for_grant(&env, grant_id, recipient.clone())?;
 
         for sub in submissions.iter() {
             apply_milestone_submission(
@@ -1238,6 +1292,24 @@ fn apply_milestone_submission(
 
     Storage::set_milestone(env, grant_id, milestone_idx, &milestone);
     Events::emit_milestone_submitted(env, grant_id, milestone_idx, description);
+
+    Ok(())
+}
+
+fn ensure_min_reputation_for_grant(
+    env: &Env,
+    grant_id: u64,
+    contributor: Address,
+) -> Result<(), ContractError> {
+    let min_reputation = Storage::get_grant_min_reputation(env, grant_id);
+    if min_reputation == 0 {
+        return Ok(());
+    }
+
+    let profile = Storage::get_contributor(env, contributor).ok_or(ContractError::Unauthorized)?;
+    if profile.reputation_score < min_reputation {
+        return Err(ContractError::InsufficientReputation);
+    }
 
     Ok(())
 }

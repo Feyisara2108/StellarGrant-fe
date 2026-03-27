@@ -1008,6 +1008,125 @@ mod tests {
     }
 
     #[test]
+    fn test_reputation_increases_after_grant_release() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, admin, contract_id) = setup_test(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_id = token_contract.address();
+        let token_admin = token::StellarAssetClient::new(&env, &token_id);
+
+        let owner = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let reviewers = Vec::new(&env);
+
+        client.contributor_register(
+            &owner,
+            &String::from_str(&env, "Alice"),
+            &String::from_str(&env, "Builder"),
+            &Vec::new(&env),
+            &String::from_str(&env, "https://github.com/alice"),
+        );
+
+        let grant_id = client.grant_create(
+            &owner,
+            &String::from_str(&env, "Reputation Grant"),
+            &String::from_str(&env, "Desc"),
+            &token_id,
+            &500,
+            &500,
+            &1,
+            &reviewers,
+        );
+
+        token_admin.mint(&funder, &500);
+        client.grant_fund(&grant_id, &funder, &500);
+
+        env.as_contract(&contract_id, || {
+            let milestone = Milestone {
+                idx: 0,
+                description: String::from_str(&env, "M1"),
+                amount: 500,
+                state: MilestoneState::Approved,
+                votes: Map::new(&env),
+                approvals: 1,
+                rejections: 0,
+                reasons: Map::new(&env),
+                status_updated_at: 0,
+                proof_url: None,
+                submission_timestamp: 0,
+            };
+            Storage::set_milestone(&env, grant_id, 0, &milestone);
+        });
+
+        client.grant_complete(&grant_id);
+
+        env.as_contract(&contract_id, || {
+            let profile = Storage::get_contributor(&env, owner.clone()).unwrap();
+            assert_eq!(profile.total_earned, 500);
+            assert_eq!(profile.reputation_score, 1);
+        });
+    }
+
+    #[test]
+    fn test_reputation_requirement_blocks_low_score_submission() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let (client, _, contract_id) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let reviewers = Vec::new(&env);
+
+        client.contributor_register(
+            &owner,
+            &String::from_str(&env, "Bob"),
+            &String::from_str(&env, "Contributor"),
+            &Vec::new(&env),
+            &String::from_str(&env, "https://github.com/bob"),
+        );
+
+        let grant_id = client.grant_create_with_rep_req(
+            &owner,
+            &String::from_str(&env, "Rep Gate"),
+            &String::from_str(&env, "Desc"),
+            &token,
+            &1000,
+            &500,
+            &2,
+            &reviewers,
+            &2u64,
+        );
+
+        let result = client.try_milestone_submit(
+            &grant_id,
+            &0u32,
+            &owner,
+            &String::from_str(&env, "Work done"),
+            &String::from_str(&env, "https://proof.url"),
+        );
+        assert_eq!(
+            result,
+            Err(Ok(ContractError::InsufficientReputation.into()))
+        );
+
+        env.as_contract(&contract_id, || {
+            let mut profile = Storage::get_contributor(&env, owner.clone()).unwrap();
+            profile.reputation_score = 2;
+            Storage::set_contributor(&env, owner.clone(), &profile);
+        });
+
+        client.milestone_submit(
+            &grant_id,
+            &0u32,
+            &owner,
+            &String::from_str(&env, "Work done"),
+            &String::from_str(&env, "https://proof.url"),
+        );
+    }
+
+    #[test]
     fn test_contributor_register_empty_name() {
         let env = Env::default();
         env.mock_all_auths();

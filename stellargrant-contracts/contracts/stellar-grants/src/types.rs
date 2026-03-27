@@ -29,6 +29,7 @@ pub enum ContractError {
     AlreadySignedRelease = 22,
     ReleaseNotReady = 23,
     GrantAlreadyReleased = 24,
+    InsufficientReputation = 25,
 }
 
 #[contracttype]
@@ -138,6 +139,7 @@ pub struct ContributorProfile {
     pub skills: Vec<String>,
     pub github_url: String,
     pub registration_timestamp: u64,
+    pub reputation_score: u64,
     pub grants_count: u32,
     pub total_earned: i128,
 }

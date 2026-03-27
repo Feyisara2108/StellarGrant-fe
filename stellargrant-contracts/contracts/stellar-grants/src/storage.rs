@@ -21,6 +21,7 @@ pub enum DataKey {
     EscrowState(u64),
     MultisigSigners(u64),
     ReleaseSignerApproval(u64, soroban_sdk::Address),
+    GrantMinReputation(u64),
 }
 
 pub struct Storage;
@@ -203,5 +204,18 @@ impl Storage {
             &DataKey::ReleaseSignerApproval(grant_id, signer.clone()),
             &approved,
         );
+    }
+
+    pub fn get_grant_min_reputation(env: &Env, grant_id: u64) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::GrantMinReputation(grant_id))
+            .unwrap_or(0)
+    }
+
+    pub fn set_grant_min_reputation(env: &Env, grant_id: u64, min_reputation: u64) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::GrantMinReputation(grant_id), &min_reputation);
     }
 }
