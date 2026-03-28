@@ -1,5 +1,10 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
+
+    /// View: Get milestone by grant_id and milestone_idx
+    pub fn get_milestone(env: Env, grant_id: u64, milestone_idx: u32) -> Option<Milestone> {
+        Storage::get_milestone(&env, grant_id, milestone_idx)
+    }
 mod events;
 /// Token-transfer reentrancy guard (lock/unlock on transient storage). See `reentrancy` module.
 mod reentrancy;
@@ -720,6 +725,7 @@ impl StellarGrantsContract {
             return Err(ContractError::Unauthorized);
         }
 
+        // Duplicate-vote guard: return error if reviewer already voted
         if milestone.votes.contains_key(reviewer.clone()) {
             return Err(ContractError::AlreadyVoted);
         }
@@ -740,11 +746,20 @@ impl StellarGrantsContract {
             milestone.rejections += reputation;
         }
 
-        let quorum_reached = milestone.approvals >= grant.quorum;
 
+        let quorum_reached = milestone.approvals >= grant.quorum;
         if quorum_reached {
             milestone.state = MilestoneState::Approved;
             milestone.status_updated_at = env.ledger().timestamp();
+
+            // Emit QuorumReached event
+            Events::emit_quorum_reached(
+                &env,
+                grant_id,
+                milestone_idx,
+                milestone.approvals as u32,
+                grant.quorum,
+            );
 
             // Reward harmonious voters who voted approve
             for (voter, voted_approve) in milestone.votes.iter() {
