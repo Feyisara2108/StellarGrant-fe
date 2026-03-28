@@ -68,6 +68,7 @@ pub enum MilestoneState {
     Paid = 3,
     Rejected = 4,
     Disputed = 5,
+    Resolved = 6,
 }
 
 #[contracttype]
