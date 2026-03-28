@@ -22,8 +22,8 @@ pub enum DataKey {
     MultisigSigners(u64),
     ReleaseSignerApproval(u64, soroban_sdk::Address),
     GrantMinReputation(u64),
-    /// Blacklisted address: Address -> bool
-    Blacklist(soroban_sdk::Address),
+    /// Tracks whether a voter has already upvoted a specific milestone.
+    MilestoneUpvoter(u64, u32, soroban_sdk::Address),
 }
 
 pub struct Storage;
@@ -243,24 +243,31 @@ impl Storage {
             .set(&DataKey::GrantMinReputation(grant_id), &min_reputation);
     }
 
-    // --- Blacklist helpers ---
-
-    pub fn is_blacklisted(env: &Env, address: &soroban_sdk::Address) -> bool {
+    pub fn has_milestone_upvote(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        voter: &soroban_sdk::Address,
+    ) -> bool {
         env.storage()
             .persistent()
-            .get(&DataKey::Blacklist(address.clone()))
+            .get(&DataKey::MilestoneUpvoter(
+                grant_id,
+                milestone_idx,
+                voter.clone(),
+            ))
             .unwrap_or(false)
     }
 
-    pub fn set_blacklisted(env: &Env, address: &soroban_sdk::Address) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Blacklist(address.clone()), &true);
-    }
-
-    pub fn remove_blacklisted(env: &Env, address: &soroban_sdk::Address) {
-        env.storage()
-            .persistent()
-            .remove(&DataKey::Blacklist(address.clone()));
+    pub fn set_milestone_upvote(
+        env: &Env,
+        grant_id: u64,
+        milestone_idx: u32,
+        voter: &soroban_sdk::Address,
+    ) {
+        env.storage().persistent().set(
+            &DataKey::MilestoneUpvoter(grant_id, milestone_idx, voter.clone()),
+            &true,
+        );
     }
 }
