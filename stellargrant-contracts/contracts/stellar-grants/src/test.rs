@@ -4378,4 +4378,230 @@ mod tests {
             assert_eq!(g.escrow_balance, 1500);
         });
     }
+
+    // ── get_grants_by_status / status index tests ───────────────────
+
+    #[test]
+    fn test_status_index_populated_on_create() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(Address::generate(&env));
+
+        let id1 = client.grant_create(
+            &owner,
+            &String::from_str(&env, "G1"),
+            &String::from_str(&env, "D"),
+            &token,
+            &1000i128,
+            &500i128,
+            &2u32,
+            &reviewers,
+            &1u32,
+            &None,
+            &0i128,
+        );
+        let id2 = client.grant_create(
+            &owner,
+            &String::from_str(&env, "G2"),
+            &String::from_str(&env, "D"),
+            &token,
+            &1000i128,
+            &500i128,
+            &2u32,
+            &reviewers,
+            &1u32,
+            &None,
+            &0i128,
+        );
+
+        let active = client.get_grants_by_status(&GrantStatus::Active, &0u32, &50u32);
+        assert!(active.contains(id1));
+        assert!(active.contains(id2));
+    }
+
+    #[test]
+    fn test_status_index_transitions_on_cancel() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(Address::generate(&env));
+
+        let grant_id = client.grant_create(
+            &owner,
+            &String::from_str(&env, "G"),
+            &String::from_str(&env, "D"),
+            &token,
+            &1000i128,
+            &500i128,
+            &2u32,
+            &reviewers,
+            &1u32,
+            &None,
+            &0i128,
+        );
+
+        client.grant_cancel(
+            &grant_id,
+            &owner,
+            &String::from_str(&env, "no longer needed"),
+        );
+
+        let active = client.get_grants_by_status(&GrantStatus::Active, &0u32, &50u32);
+        let cancelled = client.get_grants_by_status(&GrantStatus::Cancelled, &0u32, &50u32);
+        assert!(!active.contains(grant_id));
+        assert!(cancelled.contains(grant_id));
+    }
+
+    #[test]
+    fn test_status_index_pending_funding_to_active() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin, contract_id) = setup_test(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_id = token_contract.address();
+        let token_admin = token::StellarAssetClient::new(&env, &token_id);
+        let owner = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(Address::generate(&env));
+
+        token_admin.mint(&funder, &1000);
+
+        let grant_id = client.grant_create(
+            &owner,
+            &String::from_str(&env, "G"),
+            &String::from_str(&env, "D"),
+            &token_id,
+            &1000i128,
+            &500i128,
+            &2u32,
+            &reviewers,
+            &1u32,
+            &None,
+            &500i128, // min_funding
+        );
+
+        // Before threshold — should be in PendingFunding
+        let pending = client.get_grants_by_status(&GrantStatus::PendingFunding, &0u32, &50u32);
+        assert!(pending.contains(grant_id));
+
+        // Fund past threshold
+        client.grant_fund(&grant_id, &funder, &500, &None);
+
+        let pending_after =
+            client.get_grants_by_status(&GrantStatus::PendingFunding, &0u32, &50u32);
+        let active_after = client.get_grants_by_status(&GrantStatus::Active, &0u32, &50u32);
+        assert!(!pending_after.contains(grant_id));
+        assert!(active_after.contains(grant_id));
+    }
+
+    #[test]
+    fn test_status_index_pause_resume() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, contract_id) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let grant_id = 400u64;
+
+        create_grant(
+            &env,
+            &contract_id,
+            grant_id,
+            owner.clone(),
+            token,
+            Vec::new(&env),
+        );
+        // Manually seed the index since create_grant bypasses grant_create
+        env.as_contract(&contract_id, || {
+            Storage::index_add(&env, GrantStatus::Active as u32, grant_id);
+        });
+
+        client.grant_pause(&grant_id, &owner);
+        let active = client.get_grants_by_status(&GrantStatus::Active, &0u32, &50u32);
+        let paused = client.get_grants_by_status(&GrantStatus::Paused, &0u32, &50u32);
+        assert!(!active.contains(grant_id));
+        assert!(paused.contains(grant_id));
+
+        client.grant_resume(&grant_id, &owner);
+        let active2 = client.get_grants_by_status(&GrantStatus::Active, &0u32, &50u32);
+        let paused2 = client.get_grants_by_status(&GrantStatus::Paused, &0u32, &50u32);
+        assert!(active2.contains(grant_id));
+        assert!(!paused2.contains(grant_id));
+    }
+
+    #[test]
+    fn test_get_grants_by_status_pagination() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(Address::generate(&env));
+
+        // Create 5 grants
+        for i in 0..5u32 {
+            let _ = i;
+            client.grant_create(
+                &owner,
+                &String::from_str(&env, "G"),
+                &String::from_str(&env, "D"),
+                &token,
+                &1000i128,
+                &500i128,
+                &2u32,
+                &reviewers,
+                &1u32,
+                &None,
+                &0i128,
+            );
+        }
+
+        let page0 = client.get_grants_by_status(&GrantStatus::Active, &0u32, &3u32);
+        let page1 = client.get_grants_by_status(&GrantStatus::Active, &1u32, &3u32);
+        let page2 = client.get_grants_by_status(&GrantStatus::Active, &2u32, &3u32);
+
+        assert_eq!(page0.len(), 3);
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page2.len(), 0); // out of range
+    }
+
+    #[test]
+    fn test_get_grants_by_status_page_size_capped_at_50() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _) = setup_test(&env);
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let mut reviewers = Vec::new(&env);
+        reviewers.push_back(Address::generate(&env));
+
+        client.grant_create(
+            &owner,
+            &String::from_str(&env, "G"),
+            &String::from_str(&env, "D"),
+            &token,
+            &1000i128,
+            &500i128,
+            &2u32,
+            &reviewers,
+            &1u32,
+            &None,
+            &0i128,
+        );
+
+        // page_size=0 and page_size=999 both fall back to 50
+        let r1 = client.get_grants_by_status(&GrantStatus::Active, &0u32, &0u32);
+        let r2 = client.get_grants_by_status(&GrantStatus::Active, &0u32, &999u32);
+        assert_eq!(r1.len(), 1);
+        assert_eq!(r2.len(), 1);
+    }
 }
