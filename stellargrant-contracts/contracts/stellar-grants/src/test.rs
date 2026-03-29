@@ -5419,8 +5419,7 @@ mod tests {
             token_id.clone(),
             reviewers,
         );
-
-        client.grant_fund(&grant_id, &funder, &100, &None);
+        client.grant_fund(&grant_id, &funder, &100, &token_id, &None);
 
         create_milestone(
             &env,
