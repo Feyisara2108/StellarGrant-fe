@@ -1332,7 +1332,12 @@ impl StellarGrantsContract {
             // ----- Milestone approved, awaiting challenge period -----
             milestone.state = MilestoneState::AwaitingPayout;
             milestone.status_updated_at = env.ledger().timestamp();
-            Events::milestone_status_changed(&env, grant_id, milestone_idx, MilestoneState::AwaitingPayout);
+            Events::milestone_status_changed(
+                &env,
+                grant_id,
+                milestone_idx,
+                MilestoneState::AwaitingPayout,
+            );
         }
 
         Storage::set_milestone(&env, grant_id, milestone_idx, &milestone);
@@ -2331,10 +2336,10 @@ impl StellarGrantsContract {
             }
 
             if milestone.state == MilestoneState::AwaitingPayout
-                && env.ledger().timestamp() < milestone.status_updated_at + CHALLENGE_PERIOD {
+                && env.ledger().timestamp() < milestone.status_updated_at + CHALLENGE_PERIOD
+            {
                 return Err(ContractError::DeadlinePassed);
             }
-
 
             let payout_amount = milestone.amount;
             let payout_token = milestone.payout_token.clone();
@@ -2351,7 +2356,9 @@ impl StellarGrantsContract {
             let current_balance = grant.escrow_balances.get(payout_token.clone()).unwrap_or(0);
             grant.escrow_balances.set(
                 payout_token.clone(),
-                current_balance.checked_sub(payout_amount).ok_or(ContractError::InvalidInput)?,
+                current_balance
+                    .checked_sub(payout_amount)
+                    .ok_or(ContractError::InvalidInput)?,
             );
             grant.milestones_paid_out = grant
                 .milestones_paid_out
@@ -2365,8 +2372,20 @@ impl StellarGrantsContract {
             Storage::set_milestone(&env, grant_id, milestone_idx, &milestone);
 
             Events::milestone_status_changed(&env, grant_id, milestone_idx, MilestoneState::Paid);
-            Events::emit_milestone_paid(&env, grant_id, milestone_idx, payout_amount, payout_token.clone());
-            Events::emit_payout_executed(&env, grant_id, grant.owner.clone(), payout_amount, payout_token.clone());
+            Events::emit_milestone_paid(
+                &env,
+                grant_id,
+                milestone_idx,
+                payout_amount,
+                payout_token.clone(),
+            );
+            Events::emit_payout_executed(
+                &env,
+                grant_id,
+                grant.owner.clone(),
+                payout_amount,
+                payout_token.clone(),
+            );
 
             // Update contributor reputation when paid
             if payout_amount > 0 {
