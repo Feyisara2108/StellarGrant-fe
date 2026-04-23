@@ -360,11 +360,7 @@ impl StellarGrantsContract {
     /// * [`ContractError::Unauthorized`] – caller is not the registered council.
     /// * [`ContractError::GrantNotFound`] – grant does not exist.
     /// * [`ContractError::InvalidState`] – grant is already Cancelled or Completed.
-    pub fn grant_clawback(
-        env: Env,
-        council: Address,
-        grant_id: u64,
-    ) -> Result<(), ContractError> {
+    pub fn grant_clawback(env: Env, council: Address, grant_id: u64) -> Result<(), ContractError> {
         council.require_auth();
 
         let council_addr = Storage::get_council(&env).ok_or(ContractError::InvalidInput)?;
@@ -443,11 +439,7 @@ impl StellarGrantsContract {
             } else {
                 // No funders recorded for this token; send the entire balance to the council
                 // as a fallback to avoid permanently locking funds.
-                token_client.transfer(
-                    &env.current_contract_address(),
-                    &council,
-                    &balance,
-                );
+                token_client.transfer(&env.current_contract_address(), &council, &balance);
             }
 
             total_clawed_back += balance;

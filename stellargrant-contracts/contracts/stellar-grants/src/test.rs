@@ -5819,8 +5819,21 @@ mod tests {
 
         let mut reviewers = Vec::new(&env);
         reviewers.push_back(reviewer.clone());
-        create_grant(&env, &contract_id, grant_id, owner, token_id.clone(), reviewers);
-        create_milestone(&env, &contract_id, grant_id, milestone_idx, MilestoneState::Submitted);
+        create_grant(
+            &env,
+            &contract_id,
+            grant_id,
+            owner,
+            token_id.clone(),
+            reviewers,
+        );
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
         // Set MinReviewerStake to 100 but reviewer has staked nothing.
         env.as_contract(&contract_id, || {
@@ -5859,8 +5872,21 @@ mod tests {
 
         let mut reviewers = Vec::new(&env);
         reviewers.push_back(reviewer.clone());
-        create_grant(&env, &contract_id, grant_id, owner.clone(), token_id.clone(), reviewers);
-        create_milestone(&env, &contract_id, grant_id, milestone_idx, MilestoneState::Submitted);
+        create_grant(
+            &env,
+            &contract_id,
+            grant_id,
+            owner.clone(),
+            token_id.clone(),
+            reviewers,
+        );
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
         // Set MinReviewerStake to 100 and record that reviewer has staked 100.
         env.as_contract(&contract_id, || {
@@ -5899,8 +5925,21 @@ mod tests {
 
         let mut reviewers = Vec::new(&env);
         reviewers.push_back(reviewer.clone());
-        create_grant(&env, &contract_id, grant_id, owner.clone(), token_id.clone(), reviewers);
-        create_milestone(&env, &contract_id, grant_id, milestone_idx, MilestoneState::Submitted);
+        create_grant(
+            &env,
+            &contract_id,
+            grant_id,
+            owner.clone(),
+            token_id.clone(),
+            reviewers,
+        );
+        create_milestone(
+            &env,
+            &contract_id,
+            grant_id,
+            milestone_idx,
+            MilestoneState::Submitted,
+        );
 
         // MinReviewerStake is 0 by default — reviewer with zero stake should still be able to vote.
         let result = client.milestone_vote(&grant_id, &milestone_idx, &reviewer, &true, &None);
@@ -5976,7 +6015,10 @@ mod tests {
         env.as_contract(&contract_id, || {
             let updated = Storage::get_grant(&env, grant_id).unwrap();
             assert_eq!(updated.status(), GrantStatus::Cancelled);
-            assert_eq!(updated.escrow_balances.get(token_id.clone()).unwrap_or(0), 0);
+            assert_eq!(
+                updated.escrow_balances.get(token_id.clone()).unwrap_or(0),
+                0
+            );
         });
     }
 
