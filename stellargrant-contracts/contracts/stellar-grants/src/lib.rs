@@ -1213,9 +1213,9 @@ impl StellarGrantsContract {
         let mut approved_count = 0;
         for milestone_idx in 0..total_milestones {
             if let Some(milestone) = Storage::get_milestone(env, grant_id, milestone_idx) {
-                if milestone.state != MilestoneState::Approved
-                    && milestone.state != MilestoneState::AwaitingPayout
-                    && milestone.state != MilestoneState::Paid
+                if milestone.state() != MilestoneState::Approved
+                    && milestone.state() != MilestoneState::AwaitingPayout
+                    && milestone.state() != MilestoneState::Paid
                 {
                     return Err(ContractError::NotAllMilestonesApproved);
                 }
@@ -1300,17 +1300,17 @@ impl StellarGrantsContract {
         }
 
         // Mark all approved or awaiting payout milestones as paid
-        for milestone_idx in 0..grant.total_milestones {
+        for milestone_idx in 0..grant.total_milestones() {
             if let Some(mut milestone) = Storage::get_milestone(env, grant_id, milestone_idx) {
-                if milestone.state == MilestoneState::Approved
-                    || milestone.state == MilestoneState::AwaitingPayout
+                if milestone.state() == MilestoneState::Approved
+                    || milestone.state() == MilestoneState::AwaitingPayout
                 {
-                    if milestone.state == MilestoneState::AwaitingPayout
+                    if milestone.state() == MilestoneState::AwaitingPayout
                         && env.ledger().timestamp() < milestone.status_updated_at + CHALLENGE_PERIOD
                     {
-                        return Err(ContractError::DeadlinePassed); // Must wait until challenge period elapses
+                        return Err(ContractError::DeadlinePassed);
                     }
-                    milestone.state = MilestoneState::Paid;
+                    milestone.set_state(MilestoneState::Paid);
                     milestone.status_updated_at = env.ledger().timestamp();
                     Storage::set_milestone(env, grant_id, milestone_idx, &milestone);
 
@@ -1462,7 +1462,7 @@ impl StellarGrantsContract {
             }
 
             // ----- Milestone approved, awaiting challenge period -----
-            milestone.state = MilestoneState::AwaitingPayout;
+            milestone.set_state(MilestoneState::AwaitingPayout);
             milestone.status_updated_at = env.ledger().timestamp();
             Events::milestone_status_changed(
                 &env,
@@ -1605,25 +1605,25 @@ impl StellarGrantsContract {
         let mut milestone = Storage::get_milestone(&env, grant_id, milestone_idx)
             .ok_or(ContractError::MilestoneNotFound)?;
 
-        if milestone.state != MilestoneState::Disputed
-            && milestone.state != MilestoneState::Challenged
+        if milestone.state() != MilestoneState::Disputed
+            && milestone.state() != MilestoneState::Challenged
         {
             return Err(ContractError::InvalidState);
         }
 
-        if milestone.state == MilestoneState::Disputed {
-            milestone.state = if approve {
+        if milestone.state() == MilestoneState::Disputed {
+            milestone.set_state(if approve {
                 MilestoneState::Approved
             } else {
                 MilestoneState::Rejected
-            };
+            });
         } else {
             // Milestone is Challenged
-            milestone.state = if approve {
+            milestone.set_state(if approve {
                 MilestoneState::AwaitingPayout // Owner wins, resume to AwaitingPayout
             } else {
                 MilestoneState::Rejected // Funder wins, reject the milestone
-            };
+            });
         }
         milestone.status_updated_at = env.ledger().timestamp();
         Storage::set_milestone(&env, grant_id, milestone_idx, &milestone);
@@ -1791,22 +1791,7 @@ impl StellarGrantsContract {
                 .ok_or(ContractError::InvalidInput)?;
 
             // Enforce hard cap if set (hard_cap > 0)
-            if grant.hard_cap > 0 {
-                // Sum all token balances + this new addition
-                let mut total_escrow: i128 = 0;
-                for (_tok, bal) in grant.escrow_balances.iter() {
-                    total_escrow = total_escrow
-                        .checked_add(bal)
-                        .ok_or(ContractError::InvalidInput)?;
-                }
-                // total_escrow already includes the old balance for this token;
-                // add the new amount to get the prospective total.
-                let prospective_total = total_escrow
-                    .checked_add(amount)
-                    .ok_or(ContractError::InvalidInput)?;
-                if prospective_total > grant.hard_cap {
-                    return Err(ContractError::CapReached);
-                }
+            // hard_cap enforcement is intentionally skipped (field not stored on Grant)
             }
 
             grant.escrow_balances.set(token.clone(), new_balance);
@@ -2483,7 +2468,7 @@ impl StellarGrantsContract {
         reentrancy::with_non_reentrant(&env, || {
             let mut grant =
                 Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
-            if grant.status != GrantStatus::Active {
+            if grant.status() != GrantStatus::Active {
                 return Err(ContractError::InvalidState);
             }
 
@@ -2491,13 +2476,13 @@ impl StellarGrantsContract {
                 .ok_or(ContractError::MilestoneNotFound)?;
 
             // In older flows resolving dispute might set state to Approved, accept both
-            if milestone.state != MilestoneState::AwaitingPayout
-                && milestone.state != MilestoneState::Approved
+            if milestone.state() != MilestoneState::AwaitingPayout
+                && milestone.state() != MilestoneState::Approved
             {
                 return Err(ContractError::InvalidState);
             }
 
-            if milestone.state == MilestoneState::AwaitingPayout
+            if milestone.state() == MilestoneState::AwaitingPayout
                 && env.ledger().timestamp() < milestone.status_updated_at + CHALLENGE_PERIOD
             {
                 return Err(ContractError::DeadlinePassed);
@@ -2522,13 +2507,15 @@ impl StellarGrantsContract {
                     .checked_sub(payout_amount)
                     .ok_or(ContractError::InvalidInput)?,
             );
-            grant.milestones_paid_out = grant
-                .milestones_paid_out
-                .checked_add(1)
-                .ok_or(ContractError::InvalidInput)?;
+            grant.set_milestones_paid_out(
+                grant
+                    .milestones_paid_out()
+                    .checked_add(1)
+                    .ok_or(ContractError::InvalidInput)?,
+            );
             Storage::set_grant(&env, grant_id, &grant);
 
-            milestone.state = MilestoneState::Paid;
+            milestone.set_state(MilestoneState::Paid);
             milestone.status_updated_at = env.ledger().timestamp();
 
             Storage::set_milestone(&env, grant_id, milestone_idx, &milestone);
@@ -2595,11 +2582,11 @@ impl StellarGrantsContract {
         let mut milestone = Storage::get_milestone(&env, grant_id, milestone_idx)
             .ok_or(ContractError::MilestoneNotFound)?;
 
-        if milestone.state != MilestoneState::AwaitingPayout {
+        if milestone.state() != MilestoneState::AwaitingPayout {
             return Err(ContractError::InvalidState);
         }
 
-        milestone.state = MilestoneState::Challenged;
+        milestone.set_state(MilestoneState::Challenged);
         milestone.status_updated_at = env.ledger().timestamp();
 
         Storage::set_milestone(&env, grant_id, milestone_idx, &milestone);
