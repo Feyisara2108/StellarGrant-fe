@@ -49,6 +49,10 @@ pub enum ContractError {
     TooManyTags = 35,
     /// A tag exceeds 20 characters.
     TagTooLong = 36,
+    /// Caller has insufficient balance to pay the dispute fee.
+    DisputeFeeInsufficient = 37,
+    /// Dispute fee has already been charged for this milestone.
+    DisputeAlreadyCharged = 38,
 }
 
 #[contracttype]
@@ -75,7 +79,12 @@ pub struct EscrowState {
 }
 
 impl EscrowState {
-    pub fn new(mode: EscrowMode, lifecycle: EscrowLifecycleState, quorum_ready: bool, approvals_count: u32) -> Self {
+    pub fn new(
+        mode: EscrowMode,
+        lifecycle: EscrowLifecycleState,
+        quorum_ready: bool,
+        approvals_count: u32,
+    ) -> Self {
         let mut state = Self { packed_stats: 0 };
         state.set_mode(mode);
         state.set_lifecycle(lifecycle);
@@ -106,7 +115,8 @@ impl EscrowState {
     }
 
     pub fn set_lifecycle(&mut self, lifecycle: EscrowLifecycleState) {
-        self.packed_stats = (self.packed_stats & !(0xFFFFFFFF << 32)) | ((lifecycle as u32 as u128) << 32);
+        self.packed_stats =
+            (self.packed_stats & !(0xFFFFFFFF << 32)) | ((lifecycle as u32 as u128) << 32);
     }
 
     pub fn quorum_ready(&self) -> bool {
@@ -164,7 +174,14 @@ pub struct Milestone {
 }
 
 impl Milestone {
-    pub fn new(idx: u32, description: String, amount: i128, payout_token: Address, deadline: u64, env: &soroban_sdk::Env) -> Self {
+    pub fn new(
+        idx: u32,
+        description: String,
+        amount: i128,
+        payout_token: Address,
+        deadline: u64,
+        env: &soroban_sdk::Env,
+    ) -> Self {
         let mut m = Self {
             idx,
             description,
@@ -217,7 +234,8 @@ impl Milestone {
     }
 
     pub fn set_rejections(&mut self, rejections: u32) {
-        self.packed_stats = (self.packed_stats & !(0xFFFFFFFF << 64)) | ((rejections as u128) << 64);
+        self.packed_stats =
+            (self.packed_stats & !(0xFFFFFFFF << 64)) | ((rejections as u128) << 64);
     }
 
     pub fn community_upvotes(&self) -> u32 {
@@ -385,4 +403,14 @@ pub struct ContributorProfile {
     pub reputation_score: u64,
     pub grants_count: u32,
     pub total_earned: i128,
+}
+
+/// Stores who paid the dispute fee and how much, so it can be refunded or slashed
+/// when the dispute is resolved.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisputeInfo {
+    pub payer: Address,
+    pub fee_amount: i128,
+    pub fee_token: Address,
 }
