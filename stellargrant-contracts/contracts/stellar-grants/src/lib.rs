@@ -18,9 +18,7 @@ pub use types::{
     GrantStatus, Milestone, MilestoneState, MilestoneSubmission,
 };
 
-use soroban_sdk::{
-    contract, contractimpl, token, Address, BytesN, Env, String, Vec,
-};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, String, Vec};
 
 /// Community review window (3 days in seconds) that must elapse after milestone
 /// submission before official reviewer voting is allowed.
@@ -199,7 +197,7 @@ impl StellarGrantsContract {
         }
 
         let mut grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
-        
+
         // Ensure the caller is an authorized reviewer for this grant
         if !grant.reviewers.contains(reviewer) {
             return Err(ContractError::Unauthorized);

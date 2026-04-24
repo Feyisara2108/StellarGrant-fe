@@ -143,7 +143,7 @@ pub struct ContributorRegistered {
     pub name: String,
     pub timestamp: u64,
 }
- 
+
 #[contractevent]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MilestoneExtensionRequested {
