@@ -5,10 +5,12 @@ import morgan from "morgan";
 import { DataSource } from "typeorm";
 import { Grant } from "./entities/Grant";
 import { MilestoneProof } from "./entities/MilestoneProof";
+import { Activity } from "./entities/Activity";
 import { buildGrantRouter } from "./routes/grants";
 import { buildMilestoneProofRouter } from "./routes/milestone-proof";
 import { buildLeaderboardRouter } from "./routes/leaderboard";
 import { buildAdminRouter } from "./routes/admin";
+import { buildActivityRouter } from "./routes/activity";
 import { GrantSyncService } from "./services/grant-sync-service";
 import { LeaderboardService } from "./services/leaderboard-service";
 import { SignatureService } from "./services/signature-service";
@@ -71,6 +73,7 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
 
   const rateLimiter = createRateLimiter(dataSource);
 
+  const activityRepo = dataSource.getRepository(Activity);
   const grantRepo = dataSource.getRepository(Grant);
   const proofRepo = dataSource.getRepository(MilestoneProof);
   const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
@@ -86,18 +89,16 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
 
   // Apply rate limiting
   app.use(rateLimiter);
+  app.use("/grants", buildGrantRouter(grantRepo, grantSyncService, signatureService));
+  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService));
+  app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
+  app.use("/activity", buildActivityRouter(activityRepo));
+  app.use("/admin", adminMiddleware, buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo));
 
-  // API v1 routes
-  app.use("/v1/grants", buildGrantRouter(grantRepo, grantSyncService));
-  app.use("/v1/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService));
-  app.use("/v1/leaderboard", buildLeaderboardRouter(leaderboardService));
-  app.use("/v1/admin", adminMiddleware, buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo));
-
-  // 404 handler for undefined routes
-  app.use(notFoundHandler);
-
-  // Global error handler
-  app.use(errorHandler);
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const message = err instanceof Error ? err.message : "Internal server error";
+    res.status(500).json({ error: message });
+  });
 
   return app;
 };
