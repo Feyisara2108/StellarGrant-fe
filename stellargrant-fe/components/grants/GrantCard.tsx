@@ -20,7 +20,7 @@ interface GrantCardProps {
   compact?: boolean;
 }
 
-export function GrantCard({ grant, onClick, showOwner = false, compact = false }: GrantCardProps) {
+export function GrantCard({ grant, _onClick, showOwner = false, compact = false }: GrantCardProps) {
   // TODO: Implement GrantCard component
   return (
     <div className="border rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow">

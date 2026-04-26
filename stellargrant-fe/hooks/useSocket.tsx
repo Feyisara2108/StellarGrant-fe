@@ -1,12 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { useWalletStore } from "@/lib/store/walletStore";
 
 interface Notification {
   type: string;
-  payload: any;
+  payload: Record<string, unknown>;
   timestamp: string;
 }
 
@@ -26,15 +26,20 @@ export const useSocket = () => useContext(SocketContext);
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { address } = useWalletStore();
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [socket, setSocketState] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [lastNotification, setLastNotification] = useState<Notification | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     if (!address) {
-      if (socket) {
-        socket.disconnect();
-        setSocket(null);
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        setTimeout(() => {
+          setSocketState(null);
+          setConnected(false);
+        }, 0);
       }
       return;
     }
@@ -61,10 +66,19 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log("New notification received:", data);
     });
 
-    setSocket(newSocket);
+    socketRef.current = newSocket;
+    setTimeout(() => {
+      setSocketState(newSocket);
+    }, 0);
 
     return () => {
-      newSocket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        setTimeout(() => {
+          setSocketState(null);
+        }, 0);
+      }
     };
   }, [address]);
 

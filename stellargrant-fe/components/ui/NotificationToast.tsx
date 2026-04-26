@@ -5,15 +5,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useSocket } from "@/hooks/useSocket";
 import { Bell, CheckCircle, Info, Rocket, X } from "lucide-react";
 
+interface Notification {
+  type: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
 export const NotificationToast: React.FC = () => {
   const { lastNotification } = useSocket();
   const [visible, setVisible] = useState(false);
-  const [currentNotification, setCurrentNotification] = useState<any>(null);
+  const [currentNotification, setCurrentNotification] = useState<Notification | null>(null);
 
   useEffect(() => {
     if (lastNotification) {
-      setCurrentNotification(lastNotification);
-      setVisible(true);
+      setTimeout(() => {
+        setCurrentNotification(lastNotification);
+        setVisible(true);
+      }, 0);
       const timer = setTimeout(() => setVisible(false), 5000);
       return () => clearTimeout(timer);
     }
@@ -55,7 +63,7 @@ export const NotificationToast: React.FC = () => {
       case "grant_updated":
         return `Grant "${payload.title}" status changed from ${payload.oldStatus} to ${payload.newStatus}.`;
       case "milestone_submitted":
-        return `A new milestone proof has been submitted for Grant #${payload.grantId} (Milestone ${payload.milestoneIdx + 1}).`;
+        return `A new milestone proof has been submitted for Grant #${payload.grantId} (Milestone ${Number(payload.milestoneIdx) + 1}).`;
       default:
         return "You have a new update.";
     }

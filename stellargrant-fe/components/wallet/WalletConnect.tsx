@@ -7,10 +7,10 @@
 
 interface WalletConnectProps {
   variant?: "button" | "icon";
-  onConnect?: (address: string) => void;
+   _onConnect?: (address: string) => void;
 }
 
-export function WalletConnect({ variant = "button", onConnect }: WalletConnectProps) {
+export function WalletConnect({ variant = "button",  _onConnect }: WalletConnectProps) {
   // TODO: Implement wallet connect component
   return (
     <button className="px-4 py-2 bg-stellar-blue text-white rounded">
