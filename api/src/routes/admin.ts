@@ -5,6 +5,7 @@ import { GrantSyncService } from "../services/grant-sync-service";
 import { Contributor } from "../entities/Contributor";
 import { AuditLog } from "../entities/AuditLog";
 import { Grant } from "../entities/Grant";
+import { ResponseCacheService } from "../services/response-cache";
 
 const VALID_BULK_ACTIONS = ["approve", "reject", "flag"] as const;
 type BulkAction = (typeof VALID_BULK_ACTIONS)[number];
@@ -23,7 +24,8 @@ const bulkSchema = z.object({
 export const buildAdminRouter = (
   grantSyncService: GrantSyncService,
   contributorRepo: Repository<Contributor>,
-  auditLogRepo: Repository<AuditLog>
+  auditLogRepo: Repository<AuditLog>,
+  responseCache: ResponseCacheService,
 ) => {
   const router = Router();
   const grantRepo: Repository<Grant> = auditLogRepo.manager.getRepository(Grant);
@@ -132,6 +134,8 @@ export const buildAdminRouter = (
           details: JSON.stringify({ grantIds, newStatus }),
         });
       });
+
+      await responseCache.invalidateGrantsAndStats();
 
       res.json({
         data: {

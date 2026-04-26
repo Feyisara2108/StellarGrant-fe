@@ -5,6 +5,7 @@ import { UserWatchlist } from "../entities/UserWatchlist";
 import { Activity } from "../entities/Activity";
 import { GrantSyncService } from "../services/grant-sync-service";
 import { SignatureService } from "../services/signature-service";
+import { ResponseCacheService, responseCacheKeys } from "../services/response-cache";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,7 @@ export const buildGrantRouter = (
   grantRepo: Repository<Grant>,
   syncService: GrantSyncService,
   signatureService: SignatureService,
+  responseCache: ResponseCacheService,
 ) => {
   const router = Router();
   const watchlistRepo = grantRepo.manager.getRepository(UserWatchlist);
@@ -98,8 +100,8 @@ export const buildGrantRouter = (
 
   router.get("/", async (req, res, next) => {
     try {
-      await syncService.syncAllGrants();
       const lang = getPreferredLanguage(req.header("accept-language"));
+      const userAddress = req.header("x-user-address");
 
       // ---------------- Pagination ----------------
       const pagination = parsePagination(req.query.page, req.query.limit);
@@ -124,6 +126,27 @@ export const buildGrantRouter = (
         : null;
 
       const tagsFilter = parseTags(req.query.tags);
+
+      const canUseListCache =
+        responseCache.isEnabled() &&
+        !userAddress &&
+        page === 1 &&
+        limit === 20 &&
+        !statusFilter &&
+        !funderFilter &&
+        tagsFilter.length === 0 &&
+        sortBy === "id" &&
+        order === "ASC";
+
+      if (canUseListCache) {
+        const cached = await responseCache.get(responseCacheKeys.grantsFirstPage(lang));
+        if (cached) {
+          res.type("application/json").send(cached);
+          return;
+        }
+      }
+
+      await syncService.syncAllGrants();
 
       // ---------------- Query Builder ----------------
       const qb = grantRepo.createQueryBuilder("grant");
@@ -168,7 +191,6 @@ export const buildGrantRouter = (
       const [data, total] = await qb.getManyAndCount();
 
       // Add isWatched flag if user address is provided
-      const userAddress = req.header("x-user-address");
       let watchedGrantIds: Set<number> = new Set();
       if (userAddress) {
         const watchlistEntries = await watchlistRepo.find({
@@ -183,7 +205,7 @@ export const buildGrantRouter = (
         isWatched: watchedGrantIds.has(g.id),
       }));
 
-      res.json({
+      const payload = {
         data: responseData,
         meta: {
           total,
@@ -191,7 +213,12 @@ export const buildGrantRouter = (
           limit,
           totalPages: Math.ceil(total / limit),
         },
-      });
+      };
+      const body = JSON.stringify(payload);
+      if (canUseListCache) {
+        await responseCache.set(responseCacheKeys.grantsFirstPage(lang), body);
+      }
+      res.type("application/json").send(body);
     } catch (error) {
       next(error);
     }

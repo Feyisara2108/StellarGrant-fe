@@ -14,7 +14,9 @@ import { buildActivityRouter } from "./routes/activity";
 import { buildProofsRouter } from "./routes/proofs";
 import { buildNotificationsRouter } from "./routes/notifications";
 import { buildAnalyticsRouter } from "./routes/analytics";
+import { buildStatsRouter } from "./routes/stats";
 import { GrantSyncService } from "./services/grant-sync-service";
+import { ResponseCacheService } from "./services/response-cache";
 import { LeaderboardService } from "./services/leaderboard-service";
 import { SignatureService } from "./services/signature-service";
 import { IpfsService } from "./services/ipfs-service";
@@ -81,7 +83,12 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
   const activityRepo = dataSource.getRepository(Activity);
   const grantRepo = dataSource.getRepository(Grant);
   const proofRepo = dataSource.getRepository(MilestoneProof);
-  const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
+  const responseCache = new ResponseCacheService(env.redisUrl);
+  const grantSyncService = new GrantSyncService(
+    dataSource,
+    sorobanClient,
+    () => responseCache.invalidateGrantsAndStats(),
+  );
   const signatureService = new SignatureService();
   const leaderboardService = new LeaderboardService(dataSource);
 
@@ -96,11 +103,18 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
 
   // Apply rate limiting
   app.use(rateLimiter);
-  app.use("/grants", buildGrantRouter(grantRepo, grantSyncService, signatureService));
-  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService));
+  const statsRouter = buildStatsRouter(grantRepo, proofRepo, responseCache);
+  app.use("/stats", statsRouter);
+  app.use("/api/stats", statsRouter);
+  app.use("/grants", buildGrantRouter(grantRepo, grantSyncService, signatureService, responseCache));
+  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService, responseCache));
   app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
   app.use("/activity", buildActivityRouter(activityRepo));
-  app.use("/admin", adminMiddleware, buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo));
+  app.use(
+    "/admin",
+    adminMiddleware,
+    buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo, responseCache),
+  );
   app.use("/proofs", buildProofsRouter(ipfsService));
   app.use("/notifications", buildNotificationsRouter(contributorRepo));
   app.use("/analytics", buildAnalyticsRouter(grantRepo, grantViewRepo));

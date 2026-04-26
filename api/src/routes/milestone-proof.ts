@@ -4,6 +4,7 @@ import { z } from "zod";
 import { MilestoneProof } from "../entities/MilestoneProof";
 import { Activity } from "../entities/Activity";
 import { SignatureService } from "../services/signature-service";
+import { ResponseCacheService } from "../services/response-cache";
 
 const milestoneProofSchema = z.object({
   grantId: z.number().int().positive(),
@@ -18,6 +19,7 @@ const milestoneProofSchema = z.object({
 export const buildMilestoneProofRouter = (
   proofRepo: Repository<MilestoneProof>,
   signatureService: SignatureService,
+  responseCache: ResponseCacheService,
 ) => {
   const activityRepo = proofRepo.manager.getRepository(Activity);
   const router = Router();
@@ -60,6 +62,8 @@ export const buildMilestoneProofRouter = (
         actorAddress: payload.submittedBy,
         data: { grantId: payload.grantId, milestoneIdx: payload.milestoneIdx },
       });
+
+      await responseCache.invalidateGrantsAndStats();
 
       res.status(201).json({ data: proof });
     } catch (error: any) {
