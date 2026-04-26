@@ -26,11 +26,12 @@ export class EventParser {
    * @returns An array of parsed events.
    */
   static parseEvents(response: rpc.Api.GetTransactionResponse): ParsedEvent[] {
-    if (response.status !== "SUCCESS" || !response.events) {
+    const successResponse = response as any;
+    if (response.status !== "SUCCESS" || !successResponse.events) {
       return [];
     }
 
-    return response.events.map((event) => {
+    return successResponse.events.map((event: any) => {
       const parseScVal = (val: any): xdr.ScVal => {
         if (typeof val === "string") {
           return xdr.ScVal.fromXDR(val, "base64");
@@ -38,7 +39,7 @@ export class EventParser {
         return val as xdr.ScVal;
       };
 
-      const topics = event.topic.map((t) => scValToNative(parseScVal(t)));
+      const topics = event.topic.map((t: any) => scValToNative(parseScVal(t)));
       const value = scValToNative(parseScVal(event.value));
 
       // For Soroban contract events:
