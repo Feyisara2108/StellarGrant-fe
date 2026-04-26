@@ -5,6 +5,7 @@ import { MilestoneProof } from "../entities/MilestoneProof";
 import { Activity } from "../entities/Activity";
 import { SignatureService } from "../services/signature-service";
 import { ResponseCacheService } from "../services/response-cache";
+import { notificationService } from "../services/notification-service";
 
 const milestoneProofSchema = z.object({
   grantId: z.number().int().positive(),
@@ -66,6 +67,12 @@ export const buildMilestoneProofRouter = (
       });
 
       await responseCache.invalidateGrantsAndStats();
+      // Broadcast to reviewers (simplified for now as broadcast)
+      notificationService.broadcast("milestone_submitted", {
+        grantId: payload.grantId,
+        milestoneIdx: payload.milestoneIdx,
+        submittedBy: payload.submittedBy
+      });
 
       res.status(201).json({ data: proof });
     } catch (error: any) {
