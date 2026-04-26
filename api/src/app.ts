@@ -18,6 +18,7 @@ import { buildSearchRouter } from "./routes/search";
 import { buildWatchlistRouter } from "./routes/watchlist";
 import { UserWatchlist } from "./entities/UserWatchlist";
 import { GrantSyncService } from "./services/grant-sync-service";
+import { ReconciliationService } from "./services/reconciliation-service";
 import { LeaderboardService } from "./services/leaderboard-service";
 import { SignatureService } from "./services/signature-service";
 import { IpfsService } from "./services/ipfs-service";
@@ -89,6 +90,7 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
   const grantRepo = dataSource.getRepository(Grant);
   const proofRepo = dataSource.getRepository(MilestoneProof);
   const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
+  const reconciliationService = new ReconciliationService(dataSource, sorobanClient, grantSyncService);
   const signatureService = new SignatureService();
   const leaderboardService = new LeaderboardService(dataSource);
 
@@ -111,7 +113,7 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
   app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService));
   app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
   app.use("/activity", buildActivityRouter(activityRepo));
-  app.use("/admin", adminMiddleware, buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo));
+  app.use("/admin", adminMiddleware, buildAdminRouter(grantSyncService, contributorRepo, auditLogRepo, reconciliationService));
   app.use("/proofs", buildProofsRouter(ipfsService));
   app.use("/notifications", buildNotificationsRouter(contributorRepo));
   app.use("/analytics", buildAnalyticsRouter(grantRepo, grantViewRepo));
