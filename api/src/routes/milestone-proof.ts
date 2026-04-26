@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Repository } from "typeorm";
 import { z } from "zod";
 import { MilestoneProof } from "../entities/MilestoneProof";
+import { Activity } from "../entities/Activity";
 import { SignatureService } from "../services/signature-service";
 import { Grant } from "../entities/Grant";
 import { User } from "../entities/User";
@@ -11,6 +12,7 @@ const milestoneProofSchema = z.object({
   grantId: z.number().int().positive(),
   milestoneIdx: z.number().int().nonnegative(),
   proofCid: z.string().min(3).max(255),
+  description: z.string().optional(),
   submittedBy: z.string().min(10).max(120),
   signature: z.string().min(32),
   nonce: z.string().min(8).max(80),
@@ -23,6 +25,7 @@ export const buildMilestoneProofRouter = (
   grantRepo?: Repository<Grant>,
   userRepo?: Repository<User>,
 ) => {
+  const activityRepo = proofRepo.manager.getRepository(Activity);
   const router = Router();
 
   router.post("/", async (req, res, next) => {
@@ -50,6 +53,7 @@ export const buildMilestoneProofRouter = (
         grantId: payload.grantId,
         milestoneIdx: payload.milestoneIdx,
         proofCid: payload.proofCid,
+        description: payload.description || null,
         submittedBy: payload.submittedBy,
         signature: payload.signature,
         nonce: payload.nonce,

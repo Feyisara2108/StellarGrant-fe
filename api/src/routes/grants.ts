@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { Repository } from "typeorm";
 import { Grant } from "../entities/Grant";
+import { UserWatchlist } from "../entities/UserWatchlist";
+import { Activity } from "../entities/Activity";
 import { GrantSyncService } from "../services/grant-sync-service";
+import { SignatureService } from "../services/signature-service";
+import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Query-param validation helpers
@@ -55,19 +59,47 @@ function parseTags(raw: unknown): string[] {
   )];
 }
 
+function getPreferredLanguage(header: string | undefined): string {
+  if (!header) return "en";
+  const langs = header.split(",").map(l => l.split(";")[0].trim().toLowerCase());
+  return langs[0] || "en";
+}
+
+function localizeGrant(grant: Grant, lang: string) {
+  const metadata = grant.localizedMetadata || {};
+  const translation = metadata[lang] || metadata["en"] || {};
+  
+  return {
+    ...grant,
+    title: translation.title || grant.title,
+    description: translation.description || null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
+const watchSchema = z.object({
+  address: z.string().min(10).max(120),
+  signature: z.string().min(32),
+  nonce: z.string().min(8).max(80),
+  timestamp: z.number().int().positive(),
+});
+
 export const buildGrantRouter = (
   grantRepo: Repository<Grant>,
   syncService: GrantSyncService,
+  signatureService: SignatureService,
 ) => {
   const router = Router();
+  const watchlistRepo = grantRepo.manager.getRepository(UserWatchlist);
+  const activityRepo = grantRepo.manager.getRepository(Activity);
 
   router.get("/", async (req, res, next) => {
     try {
       await syncService.syncAllGrants();
+      const lang = getPreferredLanguage(req.header("accept-language"));
 
       // ---------------- Pagination ----------------
       const pagination = parsePagination(req.query.page, req.query.limit);
@@ -133,8 +165,24 @@ export const buildGrantRouter = (
       // ---------------- Execute ----------------
       const [data, total] = await qb.getManyAndCount();
 
+      // Add isWatched flag if user address is provided
+      const userAddress = req.header("x-user-address");
+      let watchedGrantIds: Set<number> = new Set();
+      if (userAddress) {
+        const watchlistEntries = await watchlistRepo.find({
+          where: { address: userAddress },
+          select: ["grantId"],
+        });
+        watchedGrantIds = new Set(watchlistEntries.map(e => e.grantId));
+      }
+
+      const responseData = data.map(g => ({
+        ...localizeGrant(g, lang),
+        isWatched: watchedGrantIds.has(g.id),
+      }));
+
       res.json({
-        data,
+        data: responseData,
         meta: {
           total,
           page,
@@ -157,6 +205,7 @@ export const buildGrantRouter = (
       }
 
       await syncService.syncGrant(id);
+      const lang = getPreferredLanguage(req.header("accept-language"));
 
       const grant = await grantRepo.findOne({ where: { id } });
 
@@ -165,7 +214,172 @@ export const buildGrantRouter = (
         return;
       }
 
-      res.json({ data: grant });
+      const userAddress = req.header("x-user-address");
+      let isWatched = false;
+      if (userAddress) {
+        const watchlistEntry = await watchlistRepo.findOne({
+          where: { address: userAddress, grantId: id },
+        });
+        isWatched = !!watchlistEntry;
+      }
+
+      res.json({ data: { ...localizeGrant(grant, lang), isWatched } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ---------------- Watch Grant ----------------
+  router.post("/:id/watch", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isNaN(id)) {
+        res.status(400).json({ error: "Invalid grant id" });
+        return;
+      }
+
+      const parsed = watchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid payload", details: parsed.error.issues });
+        return;
+      }
+
+      const { address, signature, nonce, timestamp } = parsed.data;
+      const maxSkewMs = 5 * 60 * 1000;
+      if (Math.abs(Date.now() - timestamp) > maxSkewMs) {
+        res.status(400).json({ error: "Expired intent timestamp" });
+        return;
+      }
+
+      // Verify signature
+      const action = `POST:/grants/${id}/watch`;
+      const message = [
+        "stellargrant:user_action:v1",
+        address,
+        nonce,
+        timestamp,
+        action,
+      ].join("|");
+
+      const { StrKey, Keypair } = await import("@stellar/stellar-sdk");
+      if (!StrKey.isValidEd25519PublicKey(address)) {
+        res.status(400).json({ error: "Invalid Stellar address" });
+        return;
+      }
+
+      const keypair = Keypair.fromPublicKey(address);
+      const isValid = keypair.verify(
+        Buffer.from(message, "utf8"),
+        Buffer.from(signature, "base64"),
+      );
+
+      if (!isValid) {
+        res.status(401).json({ error: "Invalid signature" });
+        return;
+      }
+
+      // Check if grant exists
+      const grant = await grantRepo.findOne({ where: { id } });
+      if (!grant) {
+        res.status(404).json({ error: "Grant not found" });
+        return;
+      }
+
+      // Add to watchlist
+      await watchlistRepo.save({
+        address,
+        grantId: id,
+      });
+
+      // Log activity for watchlist addition
+      await grantRepo.manager.getRepository(UserWatchlist).manager.getRepository(Activity).save({
+        type: "watchlist_added",
+        entityType: "grant",
+        entityId: id,
+        actorAddress: address,
+        data: null,
+      });
+
+      res.status(201).json({ data: { watched: true } });
+    } catch (error: any) {
+      if (error?.code === "23505" || error?.code === "SQLITE_CONSTRAINT") {
+        res.status(409).json({ error: "Grant already watched" });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  // ---------------- Unwatch Grant ----------------
+  router.delete("/:id/watch", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isNaN(id)) {
+        res.status(400).json({ error: "Invalid grant id" });
+        return;
+      }
+
+      const parsed = watchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid payload", details: parsed.error.issues });
+        return;
+      }
+
+      const { address, signature, nonce, timestamp } = parsed.data;
+      const maxSkewMs = 5 * 60 * 1000;
+      if (Math.abs(Date.now() - timestamp) > maxSkewMs) {
+        res.status(400).json({ error: "Expired intent timestamp" });
+        return;
+      }
+
+      // Verify signature
+      const action = `DELETE:/grants/${id}/watch`;
+      const message = [
+        "stellargrant:user_action:v1",
+        address,
+        nonce,
+        timestamp,
+        action,
+      ].join("|");
+
+      const { StrKey, Keypair } = await import("@stellar/stellar-sdk");
+      if (!StrKey.isValidEd25519PublicKey(address)) {
+        res.status(400).json({ error: "Invalid Stellar address" });
+        return;
+      }
+
+      const keypair = Keypair.fromPublicKey(address);
+      const isValid = keypair.verify(
+        Buffer.from(message, "utf8"),
+        Buffer.from(signature, "base64"),
+      );
+
+      if (!isValid) {
+        res.status(401).json({ error: "Invalid signature" });
+        return;
+      }
+
+      // Remove from watchlist
+      const result = await watchlistRepo.delete({
+        address,
+        grantId: id,
+      });
+
+      if (result.affected === 0) {
+        res.status(404).json({ error: "Watchlist entry not found" });
+        return;
+      }
+
+      // Log activity for watchlist removal
+      await activityRepo.save({
+        type: "watchlist_removed",
+        entityType: "grant",
+        entityId: id,
+        actorAddress: address,
+        data: null,
+      });
+
+      res.json({ data: { watched: false } });
     } catch (error) {
       next(error);
     }

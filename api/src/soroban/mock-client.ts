@@ -1,4 +1,4 @@
-import { SorobanContractClient, SorobanGrant } from "./types";
+import { ContributorScore, SorobanContractClient, SorobanGrant } from "./types";
 
 const mockGrants: SorobanGrant[] = [
   {
@@ -8,6 +8,10 @@ const mockGrants: SorobanGrant[] = [
     recipient: "GBRPYHIL2C2WBO36G6UIGR2PA4M3TQ7VOY3RTMAL4LRRA67ZOHQ65SZD",
     totalAmount: "250000000",
     tags: "open-source,web3,tooling",
+    localizedMetadata: {
+      en: { title: "Open Source Grants Q2", description: "Supporting the best open-source projects." },
+      es: { title: "Subvenciones de Código Abierto Q2", description: "Apoyando los mejores proyectos de código abierto." },
+    },
   },
   {
     id: 2,
@@ -16,6 +20,9 @@ const mockGrants: SorobanGrant[] = [
     recipient: "GCBQ6JQXQTVV7T7OUVPR4Q6PGACCUAKS6S2YDG3YQYQYRR2NJB5A6NAA",
     totalAmount: "100000000",
     tags: "climate,data,open-source",
+    localizedMetadata: {
+      en: { title: "Climate Data Tools", description: "Tools for measuring climate impact." },
+    },
   },
   {
     id: 3,
@@ -42,5 +49,17 @@ export class MockSorobanContractClient implements SorobanContractClient {
 
   async fetchGrantById(id: number): Promise<SorobanGrant | null> {
     return mockGrants.find((grant) => grant.id === id) ?? null;
+  }
+
+  async fetchContributorScore(address: string): Promise<ContributorScore | null> {
+    // Basic mock logic: return a consistent score for known mock addresses
+    const knownAddresses = mockGrants.map((g) => g.recipient);
+    if (!knownAddresses.includes(address)) return null;
+
+    return {
+      address,
+      reputation: 100, // Dummy fixed reputation for mocks
+      totalEarned: "1000000000",
+    };
   }
 }

@@ -3,9 +3,10 @@ import { MilestoneProof } from "./MilestoneProof";
 import { GrantReviewer } from "./GrantReviewer";
 
 @Entity({ name: "grants" })
-@Index("IDX_grants_status", ["status"])
-@Index("IDX_grants_updated_at", ["updatedAt"])
-@Index("IDX_grants_total_amount", ["totalAmount"])
+@Index("IDX_grants_status", ["status"], { synchronize: false })
+@Index("IDX_grants_updated_at", ["updatedAt"], { synchronize: false })
+@Index("IDX_grants_total_amount", ["totalAmount"], { synchronize: false })
+@Index("IDX_grants_search", { synchronize: false, expression: "to_tsvector('english', title || ' ' || COALESCE(tags, '') || ' ' || COALESCE(CAST(localizedMetadata AS TEXT), ''))" })
 export class Grant {
   @PrimaryColumn({ type: "int" })
   id!: number;
@@ -28,6 +29,9 @@ export class Grant {
    */
   @Column({ type: "text", nullable: true })
   tags!: string | null;
+
+  @Column({ type: "simple-json", nullable: true })
+  localizedMetadata!: Record<string, { title?: string; description?: string }> | null;
 
   @UpdateDateColumn()
   updatedAt!: Date;
