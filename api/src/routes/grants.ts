@@ -155,11 +155,8 @@ export const buildGrantRouter = (
       // ---------------- Query Builder ----------------
       const qb = grantRepo.createQueryBuilder("grant");
 
-      // ⚡ Filters first (better index usage)
       if (statusFilter) {
-        qb.andWhere("LOWER(grant.status) = :status", {
-          status: statusFilter,
-        });
+        qb.andWhere("LOWER(grant.status) = :status", { status: statusFilter });
       }
 
       if (funderFilter) {
@@ -169,27 +166,28 @@ export const buildGrantRouter = (
       }
 
       /**
-       * FIXED TAG LOGIC:
-       * Instead of multiple AND LIKE (too strict + slow),
-       * we use OR grouping → matches ANY tag
+       * AND tag logic: every requested tag must appear in the grant's tags column.
+       * One andWhere per tag so all conditions must be satisfied simultaneously.
        */
       if (tagsFilter.length > 0) {
         tagsFilter.forEach((tag, idx) => {
-          qb.andWhere("LOWER(COALESCE(grant.tags, '')) LIKE :tag" + idx, {
-            ["tag" + idx]: `%${tag}%`,
-          });
+          qb.andWhere(
+            "LOWER(COALESCE(grant.tags, '')) LIKE :tag" + idx,
+            { ["tag" + idx]: `%${tag}%` },
+          );
         });
       }
 
-      // ---------------- Sorting + Pagination ----------------
+      // ---------------- Sorting ----------------
+      // totalAmount is stored as varchar so we must cast to a number before
+      // sorting, otherwise "9000" sorts after "10000" lexicographically.
       if (sortBy === "totalAmount") {
-        qb.orderBy("CAST(grant.totalAmount AS DECIMAL)", order);
+        qb.orderBy("CAST(grant.totalAmount AS REAL)", order);
       } else {
         qb.orderBy(`grant.${sortBy}`, order);
       }
-      
-      qb.skip((page - 1) * limit)
-        .take(limit);
+
+      qb.skip((page - 1) * limit).take(limit);
 
       // ---------------- Execute ----------------
       const [data, total] = await qb.getManyAndCount();

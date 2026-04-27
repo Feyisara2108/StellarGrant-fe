@@ -5,6 +5,13 @@ import morgan from "morgan";
 import { DataSource } from "typeorm";
 import { Grant } from "./entities/Grant";
 import { MilestoneProof } from "./entities/MilestoneProof";
+import { User } from "./entities/User";
+import { buildUserRouter } from "./routes/users";
+import { GrantReviewer } from "./entities/GrantReviewer";
+import { buildGrantReviewerRouter } from "./routes/grant-reviewers";
+import { MilestoneApproval } from "./entities/MilestoneApproval";
+import { buildMilestoneApprovalRouter } from "./routes/milestone-approvals";
+ import { buildMilestoneApprovalNotifyRouter } from "./routes/milestone-approvals-notify";
 import { Activity } from "./entities/Activity";
 import { buildGrantRouter } from "./routes/grants";
 import { buildMilestoneProofRouter } from "./routes/milestone-proof";
@@ -91,12 +98,10 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
   const activityRepo = dataSource.getRepository(Activity);
   const grantRepo = dataSource.getRepository(Grant);
   const proofRepo = dataSource.getRepository(MilestoneProof);
-  const responseCache = new ResponseCacheService(env.redisUrl);
-  const grantSyncService = new GrantSyncService(
-    dataSource,
-    sorobanClient,
-    () => responseCache.invalidateGrantsAndStats(),
-  );
+  const userRepo = dataSource.getRepository(User);
+  const grantReviewerRepo = dataSource.getRepository(GrantReviewer);
+  const milestoneApprovalRepo = dataSource.getRepository(MilestoneApproval);
+  const grantSyncService = new GrantSyncService(dataSource, sorobanClient);
   const reconciliationService = new ReconciliationService(dataSource, sorobanClient, grantSyncService);
   const signatureService = new SignatureService();
   const leaderboardService = new LeaderboardService(dataSource);
@@ -116,11 +121,14 @@ export const createApp = (dataSource: DataSource, sorobanClient: SorobanContract
 
   // Apply rate limiting
   app.use(rateLimiter);
-  const statsRouter = buildStatsRouter(grantRepo, proofRepo, responseCache);
-  app.use("/stats", statsRouter);
-  app.use("/api/stats", statsRouter);
-  app.use("/grants", buildGrantRouter(grantRepo, grantSyncService, signatureService, responseCache));
-  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService, responseCache));
+  app.use("/grants", buildGrantRouter(grantRepo, grantSyncService, signatureService));
+  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService, grantRepo, userRepo));
+  app.use("/users", buildUserRouter(userRepo));
+  app.use("/grant_reviewers", buildGrantReviewerRouter(grantReviewerRepo));
+  app.use("/milestone_approvals", buildMilestoneApprovalRouter(milestoneApprovalRepo));
+   app.use("/milestone_approvals_notify", buildMilestoneApprovalNotifyRouter(milestoneApprovalRepo, grantRepo, userRepo));
+  app.use("/grants", buildGrantRouter(grantRepo, grantSyncService, signatureService));
+  app.use("/milestone_proof", buildMilestoneProofRouter(proofRepo, signatureService));
   app.use("/leaderboard", buildLeaderboardRouter(leaderboardService));
   app.use("/activity", buildActivityRouter(activityRepo));
   app.use(
